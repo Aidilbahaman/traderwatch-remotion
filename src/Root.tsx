@@ -27,6 +27,7 @@ import {SignalEngine} from './components/SignalEngine';
 import {SignalEngineMY} from './components/SignalEngineMY';
 import {PriceAction} from './components/PriceAction';
 import {TrendVsRange} from './components/TrendVsRange';
+import {TechVsFundApple, TAFA_APPLE_FRAMES} from './components/TechVsFundApple';
 import {TechVsFund, TAFA_FRAMES} from './components/TechVsFund';
 import {AISignalApple, AISignalFrames} from './components/AISignalApple';
 import {LLMExplainer} from './components/LLMExplainer';
@@ -300,6 +301,14 @@ export const RemotionRoot: React.FC = () => {
         id="TrendVsRange"
         component={TrendVsRange}
         durationInFrames={1520}
+        fps={30}
+        width={1080}
+        height={1920}
+      />
+      <Composition
+        id="TechVsFundApple"
+        component={TechVsFundApple}
+        durationInFrames={TAFA_APPLE_FRAMES}
         fps={30}
         width={1080}
         height={1920}
