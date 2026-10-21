@@ -5,12 +5,14 @@ name: Render
 #   2. Push: commit message containing [render] <CompId>[,<CompId>]
 #      Example: feat: new cut [render] TechVsFundApple,TechVsFundEditorial
 #
-# Up to two compositions render concurrently on the self-hosted Mac runner.
+# Renders ONE composition at a time (max-parallel: 1). The Mac runner is
+# slower than the VPS but stays out of the way, and each finished video
+# becomes its own artifact that can be downloaded immediately.
 on:
   workflow_dispatch:
     inputs:
       compositions:
-        description: 'Composition IDs, comma separated (max 2 recommended)'
+        description: 'Composition IDs, comma separated'
         required: true
         default: 'TechVsFundApple,TechVsFundEditorial'
       crf:
@@ -29,28 +31,15 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  render:
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      contains(github.event.head_commit.message, '[render]')
+  prepare:
     runs-on: [self-hosted, macOS]
-    timeout-minutes: 90
+    timeout-minutes: 15
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      crf: ${{ steps.plan.outputs.crf }}
+      muted: ${{ steps.plan.outputs.muted }}
 
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-
-      - name: Install dependencies
-        run: |
-          # npm ci intermittently fails on macOS with "Exit handler never called".
-          # npm install is tolerant of an out-of-sync lockfile and recovers.
-          npm install --no-audit --no-fund
-          test -d node_modules/remotion || npm install --no-audit --no-fund
-
       - name: Resolve compositions
         id: plan
         shell: bash
@@ -67,53 +56,77 @@ jobs:
             crf="16"
             muted="true"
           fi
-          echo "list=$list"   >> "$GITHUB_OUTPUT"
-          echo "crf=$crf"     >> "$GITHUB_OUTPUT"
-          echo "muted=$muted" >> "$GITHUB_OUTPUT"
-          echo "Rendering: $list (crf=$crf muted=$muted)"
 
-      - name: Render concurrently
+          ids=()
+          IFS=',' read -ra RAW <<< "$list"
+          for raw in "${RAW[@]}"; do
+            id="$(printf '%s' "$raw" | xargs)"
+            [ -z "$id" ] && continue
+            ids+=("$id")
+          done
+
+          if [ "${#ids[@]}" -eq 0 ]; then
+            ids=("TechVsFundEditorial")
+          fi
+
+          matrix='{"include":['
+          for i in "${!ids[@]}"; do
+            [ "$i" -gt 0 ] && matrix+=','
+            matrix+="{\"id\":\"${ids[$i]}\"}"
+          done
+          matrix+=']}'
+
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "crf=$crf"       >> "$GITHUB_OUTPUT"
+          echo "muted=$muted"   >> "$GITHUB_OUTPUT"
+          echo "Queue: ${ids[*]} (one at a time)"
+
+  render:
+    needs: prepare
+    runs-on: [self-hosted, macOS]
+    timeout-minutes: 90
+
+    strategy:
+      # ONE AT A TIME. The Mac renders each composition in sequence so the
+      # first video is downloadable long before the last one finishes.
+      max-parallel: 1
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.prepare.outputs.matrix).include }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: |
+          # npm ci intermittently fails on macOS with "Exit handler never called".
+          # npm install is tolerant of an out-of-sync lockfile and recovers.
+          npm install --no-audit --no-fund
+          test -d node_modules/remotion || npm install --no-audit --no-fund
+
+      - name: Render
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p out
-          IFS=',' read -ra IDS <<< "${{ steps.plan.outputs.list }}"
-          pids=()
-          names=()
+          id="${{ matrix.id }}"
 
-          for raw in "${IDS[@]:0:2}"; do
-            id="$(printf '%s' "$raw" | xargs)"
-            [ -z "$id" ] && continue
+          flags=(--codec=h264 --crf="${{ needs.prepare.outputs.crf }}" --jpeg-quality=95)
+          if [ "${{ needs.prepare.outputs.muted }}" = "true" ]; then
+            flags+=(--muted)
+          fi
 
-            flags=(--codec=h264 --crf="${{ steps.plan.outputs.crf }}" --jpeg-quality=95)
-            if [ "${{ steps.plan.outputs.muted }}" = "true" ]; then
-              flags+=(--muted)
-            fi
+          echo "===== RENDER $id ====="
+          npx remotion render "$id" "out/${id}.mp4" "${flags[@]}" \
+            > "out/${id}.log" 2>&1
 
-            npx remotion render "$id" "out/${id}.mp4" "${flags[@]}" \
-              > "out/${id}.log" 2>&1 &
-            pids+=("$!")
-            names+=("$id")
-            echo "STARTED $id (pid=$!)"
-          done
-
-          failed=0
-          for i in "${!pids[@]}"; do
-            if wait "${pids[$i]}"; then
-              echo "OK   ${names[$i]}"
-            else
-              echo "FAIL ${names[$i]}"
-              failed=1
-            fi
-          done
-
-          for log in out/*.log; do
-            [ -e "$log" ] || continue
-            echo "===== $log ====="
-            tail -60 "$log"
-          done
-
-          exit "$failed"
+          echo "===== $id LOG (tail) ====="
+          tail -25 "out/${id}.log"
 
       - name: Probe output
         if: always()
@@ -137,7 +150,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: renders-${{ github.run_number }}
+          name: ${{ matrix.id }}-${{ github.run_number }}
           path: |
             out/*.mp4
             out/*.log
