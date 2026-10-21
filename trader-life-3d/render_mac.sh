@@ -13,29 +13,50 @@ if [ ! -d node_modules/three ]; then
   npm install --no-audit --no-fund
 fi
 
-# Chrome headless shell: reuse the one Remotion already downloaded, else fetch it.
+# Chrome headless shell. The workflow may hand us a path that is relative to the
+# repo root while we run inside trader-life-3d/, so resolve and verify it, then
+# fall back to postinstall.js which publishes an absolute path.
 CHROME_BIN="${CHROME:-}"
-if [ -z "$CHROME_BIN" ]; then
-  for c in \
-    "$HOME/.cache/remotion/chrome-headless-shell" \
-    "$HOME/Library/Caches/remotion/chrome-headless-shell" \
-    "../node_modules/.remotion/chrome-headless-shell/mac-arm64/chrome-headless-shell-mac-arm64/chrome-headless-shell" \
-    "../node_modules/.remotion/chrome-headless-shell/mac-x64/chrome-headless-shell-mac-x64/chrome-headless-shell" ; do
-    if [ -x "$c" ]; then CHROME_BIN="$c"; break; fi
+
+resolve() {
+  # try as given, then relative to the repo root, then absolute
+  for p in "$1" "$(cd .. && pwd)/$1" "$(pwd)/$1"; do
+    [ -n "$p" ] && [ -x "$p" ] && { echo "$p"; return 0; }
   done
+  return 1
+}
+
+if [ -n "$CHROME_BIN" ]; then
+  if R="$(resolve "$CHROME_BIN")"; then
+    CHROME_BIN="$R"
+  else
+    echo "!! CHROME=$CHROME_BIN is not executable, discarding"
+    CHROME_BIN=""
+  fi
 fi
+
 if [ -z "$CHROME_BIN" ]; then
-  # postinstall.js already published one here; this is the workflow's first probe.
   for c in "$HOME/.cache/remotion/chrome-headless-shell" \
            "$HOME/Library/Caches/remotion/chrome-headless-shell" ; do
     if [ -x "$c" ]; then CHROME_BIN="$c"; break; fi
   done
 fi
+
 if [ -z "$CHROME_BIN" ]; then
-  echo "!! no chrome-headless-shell found; running postinstall"
+  echo "!! no usable chrome-headless-shell; running postinstall"
   node postinstall.js
-  CHROME_BIN="$HOME/.cache/remotion/chrome-headless-shell"
+  for c in "$HOME/.cache/remotion/chrome-headless-shell" \
+           "$HOME/Library/Caches/remotion/chrome-headless-shell" ; do
+    if [ -x "$c" ]; then CHROME_BIN="$c"; break; fi
+  done
 fi
+
+if [ -z "$CHROME_BIN" ]; then
+  echo "!! still no chrome; last resort scan"
+  CHROME_BIN="$(find "$(cd .. && pwd)/.chrome" ./.chrome -type f -name 'chrome-headless-shell' 2>/dev/null | head -1)"
+fi
+
+test -n "$CHROME_BIN" || { echo "FATAL: no chrome"; exit 1; }
 echo "chrome: $CHROME_BIN"
 export CHROME="$CHROME_BIN"
 
