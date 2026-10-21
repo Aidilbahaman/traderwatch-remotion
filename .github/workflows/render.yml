@@ -1,12 +1,18 @@
 name: Render
 
+# Triggers
+#   1. Manual: Actions -> Render -> Run workflow
+#   2. Push: commit message containing [render] <CompId>[,<CompId>]
+#      Example: feat: new cut [render] TechVsFundApple,TechVsFundEditorial
+#
+# Up to two compositions render concurrently on the self-hosted Mac runner.
 on:
   workflow_dispatch:
     inputs:
       compositions:
-        description: 'Composition id(s), comma separated'
+        description: 'Composition IDs, comma separated (max 2 recommended)'
         required: true
-        default: 'TechVsFundEditorial'
+        default: 'TechVsFundApple,TechVsFundEditorial'
       crf:
         description: 'CRF - 16 sharp, 18 smaller'
         required: false
@@ -19,7 +25,7 @@ on:
     branches: [main]
 
 concurrency:
-  group: render-${{ github.ref }}
+  group: traderwatch-render
   cancel-in-progress: false
 
 jobs:
@@ -41,7 +47,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Resolve what to render
+      - name: Resolve compositions
         id: plan
         shell: bash
         run: |
@@ -60,43 +66,76 @@ jobs:
           echo "list=$list"   >> "$GITHUB_OUTPUT"
           echo "crf=$crf"     >> "$GITHUB_OUTPUT"
           echo "muted=$muted" >> "$GITHUB_OUTPUT"
+          echo "Rendering: $list (crf=$crf muted=$muted)"
 
-      - name: Render
+      - name: Render concurrently
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p out
           IFS=',' read -ra IDS <<< "${{ steps.plan.outputs.list }}"
-          for raw in "${IDS[@]}"; do
+          pids=()
+          names=()
+
+          for raw in "${IDS[@]:0:2}"; do
             id="$(printf '%s' "$raw" | xargs)"
             [ -z "$id" ] && continue
-            echo "::group::render $id"
+
             flags=(--codec=h264 --crf="${{ steps.plan.outputs.crf }}" --jpeg-quality=95)
             if [ "${{ steps.plan.outputs.muted }}" = "true" ]; then
               flags+=(--muted)
             fi
-            npx remotion render "$id" "out/${id}.mp4" "${flags[@]}"
-            echo "::endgroup::"
+
+            npx remotion render "$id" "out/${id}.mp4" "${flags[@]}" \
+              > "out/${id}.log" 2>&1 &
+            pids+=("$!")
+            names+=("$id")
+            echo "STARTED $id (pid=$!)"
           done
 
+          failed=0
+          for i in "${!pids[@]}"; do
+            if wait "${pids[$i]}"; then
+              echo "OK   ${names[$i]}"
+            else
+              echo "FAIL ${names[$i]}"
+              failed=1
+            fi
+          done
+
+          for log in out/*.log; do
+            [ -e "$log" ] || continue
+            echo "===== $log ====="
+            tail -60 "$log"
+          done
+
+          exit "$failed"
+
       - name: Probe output
+        if: always()
         shell: bash
         run: |
           set -uo pipefail
           for f in out/*.mp4; do
             [ -e "$f" ] || continue
-            echo "== $f"
-            du -h "$f"
-            command -v ffprobe >/dev/null 2>&1 && ffprobe -v error \
-              -show_entries format=duration,size \
-              -show_entries stream=codec_name,width,height,r_frame_rate \
-              -of default=noprint_wrappers=1 "$f"
+            echo "===== $f"
+            ls -lh "$f"
+            if command -v ffprobe >/dev/null 2>&1; then
+              ffprobe -v error \
+                -show_entries format=duration,size \
+                -show_entries stream=codec_name,width,height,r_frame_rate \
+                -of default=noprint_wrappers=1 "$f"
+            else
+              echo "(ffprobe not installed on runner - size only)"
+            fi
           done
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: renders-${{ github.run_number }}
-          path: out/*.mp4
+          path: |
+            out/*.mp4
+            out/*.log
           retention-days: 14
           if-no-files-found: warn
