@@ -1,0 +1,102 @@
+name: Render
+
+on:
+  workflow_dispatch:
+    inputs:
+      compositions:
+        description: 'Composition id(s), comma separated'
+        required: true
+        default: 'TechVsFundEditorial'
+      crf:
+        description: 'CRF - 16 sharp, 18 smaller'
+        required: false
+        default: '16'
+      muted:
+        description: 'Strip the audio track'
+        type: boolean
+        default: true
+  push:
+    branches: [main]
+
+concurrency:
+  group: render-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  render:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.head_commit.message, '[render]')
+    runs-on: [self-hosted, macOS]
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Resolve what to render
+        id: plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            list="${{ inputs.compositions }}"
+            crf="${{ inputs.crf }}"
+            muted="${{ inputs.muted }}"
+          else
+            list="$(printf '%s' "${{ github.event.head_commit.message }}" \
+                    | sed -n 's/.*\[render\][[:space:]]*//p' \
+                    | head -1 | tr -d '\r')"
+            crf="16"
+            muted="true"
+          fi
+          echo "list=$list"   >> "$GITHUB_OUTPUT"
+          echo "crf=$crf"     >> "$GITHUB_OUTPUT"
+          echo "muted=$muted" >> "$GITHUB_OUTPUT"
+
+      - name: Render
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          IFS=',' read -ra IDS <<< "${{ steps.plan.outputs.list }}"
+          for raw in "${IDS[@]}"; do
+            id="$(printf '%s' "$raw" | xargs)"
+            [ -z "$id" ] && continue
+            echo "::group::render $id"
+            flags=(--codec=h264 --crf="${{ steps.plan.outputs.crf }}" --jpeg-quality=95)
+            if [ "${{ steps.plan.outputs.muted }}" = "true" ]; then
+              flags+=(--muted)
+            fi
+            npx remotion render "$id" "out/${id}.mp4" "${flags[@]}"
+            echo "::endgroup::"
+          done
+
+      - name: Probe output
+        shell: bash
+        run: |
+          set -uo pipefail
+          for f in out/*.mp4; do
+            [ -e "$f" ] || continue
+            echo "== $f"
+            du -h "$f"
+            command -v ffprobe >/dev/null 2>&1 && ffprobe -v error \
+              -show_entries format=duration,size \
+              -show_entries stream=codec_name,width,height,r_frame_rate \
+              -of default=noprint_wrappers=1 "$f"
+          done
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: renders-${{ github.run_number }}
+          path: out/*.mp4
+          retention-days: 14
+          if-no-files-found: warn
