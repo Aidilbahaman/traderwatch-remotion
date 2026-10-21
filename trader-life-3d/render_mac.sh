@@ -76,11 +76,36 @@ CHUNKS="${CHUNKS:-8}"
 N=$((DUR*FPS))
 
 rm -rf chunks
+# Capture several chunks at once. Each chunk is an independent browser writing
+# its own frame range, so this scales close to linearly on a multi-core Mac.
+WORKERS="${WORKERS:-3}"
+echo "capturing $CHUNKS chunks with $WORKERS parallel workers"
+
+pids=(); labels=()
 for i in $(seq 0 $((CHUNKS-1))); do
-  echo "=== chunk $i/$CHUNKS ==="
-  node capture_chunk.js "$i" "$CHUNKS" "$FPS"
-  echo "frames so far: $(find chunks -name '*.jpg' | wc -l)"
+  node capture_chunk.js "$i" "$CHUNKS" "$FPS" > "chunk-$i.log" 2>&1 &
+  pids+=("$!"); labels+=("$i")
+  echo "started chunk $i (pid $!)"
+
+  if [ "${#pids[@]}" -ge "$WORKERS" ]; then
+    if ! wait "${pids[0]}"; then
+      echo "!! chunk ${labels[0]} failed"
+      tail -20 "chunk-${labels[0]}.log"
+      exit 1
+    fi
+    pids=("${pids[@]:1}"); labels=("${labels[@]:1}")
+    echo "frames so far: $(find chunks -name '*.jpg' | wc -l)"
+  fi
 done
+
+for k in "${!pids[@]}"; do
+  if ! wait "${pids[$k]}"; then
+    echo "!! chunk ${labels[$k]} failed"
+    tail -20 "chunk-${labels[$k]}.log"
+    exit 1
+  fi
+done
+echo "frames so far: $(find chunks -name '*.jpg' | wc -l)"
 
 TOTAL=$(find chunks -name '*.jpg' | wc -l)
 echo "captured $TOTAL / $N"
