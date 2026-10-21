@@ -1,0 +1,104 @@
+name: Render 3D Skit
+
+# Renders trader-life-3d (Three.js HTML scene) on the self-hosted Mac runner.
+# This is a separate pipeline from the Remotion compositions: the scene is a
+# deterministic HTML/WebGL page captured frame by frame, not a React comp.
+on:
+  workflow_dispatch:
+    inputs:
+      fps:
+        description: 'Frames per second (24 is ~20% faster, 30 is smoothest)'
+        required: false
+        default: '24'
+      chunks:
+        description: 'Number of capture chunks (more = smaller memory, more restarts)'
+        required: false
+        default: '8'
+  push:
+    branches: [main]
+
+concurrency:
+  group: traderwatch-3d
+  cancel-in-progress: false
+
+jobs:
+  render3d:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.head_commit.message, '[render3d]')
+    runs-on: [self-hosted, macOS]
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install root dependencies
+        run: |
+          npm install --no-audit --no-fund
+
+      - name: Install 3D scene dependencies
+        working-directory: trader-life-3d
+        run: |
+          npm install puppeteer-core@23 three@0.170.0 --no-audit --no-fund --no-save
+
+      - name: Locate Chrome headless shell
+        id: chrome
+        shell: bash
+        run: |
+          set -euo pipefail
+          C=""
+          for cand in \
+            "$HOME/.cache/remotion/chrome-headless-shell" \
+            "$HOME/Library/Caches/remotion/chrome-headless-shell" \
+            "node_modules/.remotion/chrome-headless-shell/mac-arm64/chrome-headless-shell-mac-arm64/chrome-headless-shell" \
+            "node_modules/.remotion/chrome-headless-shell/mac-x64/chrome-headless-shell-mac-x64/chrome-headless-shell" ; do
+            if [ -x "$cand" ]; then C="$cand"; break; fi
+          done
+          if [ -z "$C" ]; then
+            echo "no bundled chrome found, installing"
+            C="$(npx --yes @puppeteer/browsers install chrome-headless-shell@stable --path .chrome | tail -1 | awk '{print $2}')"
+          fi
+          echo "chrome=$C"
+          echo "path=$C" >> "$GITHUB_OUTPUT"
+
+      - name: Capture and encode
+        working-directory: trader-life-3d
+        shell: bash
+        env:
+          CHROME: ${{ steps.chrome.outputs.path }}
+          FPS: ${{ github.event_name == 'workflow_dispatch' && inputs.fps || '24' }}
+          CHUNKS: ${{ github.event_name == 'workflow_dispatch' && inputs.chunks || '8' }}
+        run: |
+          set -euo pipefail
+          chmod +x render_mac.sh
+          ./render_mac.sh ../out
+
+      - name: Probe output
+        if: always()
+        shell: bash
+        run: |
+          set -uo pipefail
+          for f in out/*.mp4; do
+            [ -e "$f" ] || continue
+            echo "===== $f"
+            ls -lh "$f"
+            ffprobe -v error \
+              -show_entries format=duration,size \
+              -show_entries stream=codec_name,width,height,r_frame_rate,nb_frames \
+              -of default=noprint_wrappers=1 "$f" || true
+          done
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trader-life-3d-${{ github.run_number }}
+          path: |
+            out/*.mp4
+            trader-life-3d/chunks/**/*.jpg
+          retention-days: 14
+          if-no-files-found: warn
