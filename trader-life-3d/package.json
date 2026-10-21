@@ -9,6 +9,8 @@
     "serve": "node serve.js"
   },
   "dependencies": {
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
+    "@ffprobe-installer/ffprobe": "^2.1.2",
     "puppeteer-core": "^23.11.1",
     "three": "0.170.0"
   }

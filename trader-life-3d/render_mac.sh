@@ -91,7 +91,35 @@ fi
 # Concat list needs absolute paths, otherwise ffmpeg resolves them next to the list file.
 ls chunks/*/*.jpg | sort | sed "s|^|file '$PWD/|;s|\$|'|" > frames.txt
 
-ffmpeg -y -v error -f concat -safe 0 -r "$FPS" -i frames.txt \
+# ffmpeg: a fresh macOS runner has none, and brew may not be installed either.
+# @ffmpeg-installer/ffmpeg ships a prebuilt binary as an npm dependency, so that
+# is the primary source. Everything else is a fallback.
+FF="$(node -e "try{process.stdout.write(require('@ffmpeg-installer/ffmpeg').path)}catch(e){}" 2>/dev/null || true)"
+[ -n "$FF" ] && [ ! -x "$FF" ] && FF=""
+if [ -z "$FF" ]; then
+  for cand in "$(command -v ffmpeg 2>/dev/null || true)" \
+              "../node_modules/@remotion/compositor-darwin-arm64/ffmpeg" \
+              "../node_modules/@remotion/compositor-darwin-x64/ffmpeg" \
+              "/opt/homebrew/bin/ffmpeg" \
+              "/usr/local/bin/ffmpeg" ; do
+    [ -n "$cand" ] && [ -x "$cand" ] && { FF="$cand"; break; }
+  done
+fi
+if [ -z "$FF" ]; then
+  FF="$(find ../node_modules/@remotion -maxdepth 3 -name ffmpeg -type f 2>/dev/null | head -1)"
+fi
+if [ -z "$FF" ]; then
+  echo "FATAL: no ffmpeg available (npm install @ffmpeg-installer/ffmpeg failed?)"
+  exit 127
+fi
+echo "ffmpeg: $FF"
+
+# ffprobe is only used for reporting; never fatal.
+FP="$(node -e "try{process.stdout.write(require('@ffprobe-installer/ffprobe').path)}catch(e){}" 2>/dev/null || true)"
+[ -n "$FP" ] && echo "ffprobe: $FP"
+export PATH="$(dirname "$FF"):${FP:+$(dirname "$FP"):}$PATH"
+
+"$FF" -y -v error -f concat -safe 0 -r "$FPS" -i frames.txt \
   -c:v libx264 -preset medium -crf 16 -pix_fmt yuv420p -r "$FPS" \
   -movflags +faststart video-only.mp4
 
