@@ -1,0 +1,15 @@
+{
+  "name": "trader-life-3d",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Deterministic Three.js skit scene, captured frame-by-frame and encoded to MP4",
+  "scripts": {
+    "postinstall": "node postinstall.js",
+    "render": "bash render_mac.sh ../out",
+    "serve": "node serve.js"
+  },
+  "dependencies": {
+    "puppeteer-core": "^23.11.1",
+    "three": "0.170.0"
+  }
+}

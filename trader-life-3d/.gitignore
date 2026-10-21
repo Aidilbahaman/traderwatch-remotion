@@ -1,0 +1,7 @@
+node_modules/
+out/
+.chrome/
+chunks/
+frames.txt
+video-only.mp4
+.DS_Store

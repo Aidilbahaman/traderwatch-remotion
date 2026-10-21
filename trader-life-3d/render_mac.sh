@@ -8,10 +8,9 @@ mkdir -p "$OUT_DIR"
 
 echo "=== node $(node --version) / npm $(npm --version) ==="
 
-# Three.js is only needed for the 3D scene; keep it local to this folder.
+# Dependencies + the Chrome guarantee come from package.json / postinstall.js.
 if [ ! -d node_modules/three ]; then
-  npm init -y >/dev/null 2>&1 || true
-  npm install three@0.170.0 --no-audit --no-fund
+  npm install --no-audit --no-fund
 fi
 
 # Chrome headless shell: reuse the one Remotion already downloaded, else fetch it.
@@ -26,7 +25,16 @@ if [ -z "$CHROME_BIN" ]; then
   done
 fi
 if [ -z "$CHROME_BIN" ]; then
-  CHROME_BIN="$(npx --yes @puppeteer/browsers install chrome-headless-shell@stable --path .chrome 2>/dev/null | tail -1)"
+  # postinstall.js already published one here; this is the workflow's first probe.
+  for c in "$HOME/.cache/remotion/chrome-headless-shell" \
+           "$HOME/Library/Caches/remotion/chrome-headless-shell" ; do
+    if [ -x "$c" ]; then CHROME_BIN="$c"; break; fi
+  done
+fi
+if [ -z "$CHROME_BIN" ]; then
+  echo "!! no chrome-headless-shell found; running postinstall"
+  node postinstall.js
+  CHROME_BIN="$HOME/.cache/remotion/chrome-headless-shell"
 fi
 echo "chrome: $CHROME_BIN"
 export CHROME="$CHROME_BIN"
