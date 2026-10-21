@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+  html,body{margin:0;padding:0;background:#05080f;overflow:hidden}
+  #stage{width:1080px;height:1920px;position:relative;overflow:hidden;background:#05080f}
+  canvas{position:absolute;inset:0;width:1080px;height:1920px;display:block}
+  .vig{position:absolute;inset:0;pointer-events:none;
+       background:radial-gradient(ellipse at 50% 46%,transparent 38%,rgba(3,5,12,.82) 100%)}
+  .scan{position:absolute;inset:0;pointer-events:none;opacity:.05;
+        background:repeating-linear-gradient(0deg,#fff 0 1px,transparent 1px 4px)}
+
+  #brand{position:absolute;top:104px;left:0;right:0;text-align:center;
+         font:600 30px/1 -apple-system,'Helvetica Neue','DejaVu Sans',Arial,sans-serif;
+         letter-spacing:.30em;color:#8fa6c8;text-transform:uppercase}
+  #brand i{display:inline-block;width:12px;height:12px;border-radius:50%;background:#2a6df0;
+           margin-right:16px;vertical-align:2px;box-shadow:0 0 22px #2a6df0}
+
+  #title{position:absolute;top:300px;left:80px;right:80px;text-align:center;
+         font:700 118px/0.98 -apple-system,'Helvetica Neue','DejaVu Sans',Arial,sans-serif;
+         letter-spacing:-.045em;color:#f2f7ff;opacity:0;
+         text-shadow:0 8px 60px rgba(0,0,0,.85)}
+  #title em{font-style:normal;color:#2a6df0}
+
+  #cap{position:absolute;left:96px;right:96px;bottom:330px;text-align:center;
+       font:600 62px/1.24 -apple-system,'Helvetica Neue','DejaVu Sans',Arial,sans-serif;
+       letter-spacing:-.02em;color:#eaf2ff;opacity:0;
+       text-shadow:0 4px 34px rgba(0,0,0,.95),0 0 4px rgba(0,0,0,.8)}
+  #cap b{color:#ffb35c}
+  #cap .red{color:#e0555a}
+
+  #num{position:absolute;left:96px;top:250px;font:800 40px/1 -apple-system,'Helvetica Neue',Arial,sans-serif;
+       letter-spacing:.16em;color:#2a6df0;opacity:0}
+
+  #end{position:absolute;left:90px;right:90px;bottom:250px;text-align:center;opacity:0}
+  #end .big{font:700 76px/1.1 -apple-system,'Helvetica Neue','DejaVu Sans',Arial,sans-serif;
+            letter-spacing:-.035em;color:#f2f7ff}
+  #end .big span{color:#2a6df0}
+  #end .small{margin-top:34px;font:500 30px/1.5 -apple-system,'Helvetica Neue',Arial,sans-serif;
+              color:#7d90ad;letter-spacing:.01em}
+
+  #handle{position:absolute;left:0;right:0;bottom:132px;text-align:center;
+          font:600 32px/1 -apple-system,'Helvetica Neue',Arial,sans-serif;
+          letter-spacing:.08em;color:#5d6f8c;opacity:0}
+  #disc{position:absolute;left:0;right:0;bottom:74px;text-align:center;
+        font:500 25px/1 -apple-system,'Helvetica Neue',Arial,sans-serif;
+        color:#46536b;opacity:0}
+</style></head><body>
+<div id="stage">
+  <div class="vig"></div>
+  <div class="scan"></div>
+  <div id="brand"><i></i>TraderWatch · Skit</div>
+  <div id="title">Five ways<br>a trade <em>dies.</em></div>
+  <div id="num"></div>
+  <div id="cap"></div>
+  <div id="end">
+    <div class="big">The market didn't<br><span>do this to you.</span></div>
+    <div class="small">Five decisions. All yours.</div>
+  </div>
+  <div id="handle">@traderwatch</div>
+  <div id="disc">Educational content only. Not financial advice.</div>
+</div>
+<script type="importmap">{"imports":{"three":"./node_modules/three/build/three.module.js"}}</script>
+<script type="module">
+import * as THREE from 'three';
+
+const W=1080, H=1920, DUR=68;
+const renderer=new THREE.WebGLRenderer({antialias:true,preserveDrawingBuffer:true,powerPreference:'high-performance'});
+renderer.setPixelRatio(1);
+renderer.setSize(W,H,false);
+renderer.setClearColor(0x05080f,1);
+const stageEl=document.getElementById('stage');
+stageEl.insertBefore(renderer.domElement,stageEl.firstChild);
+
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x05080f);
+scene.fog=new THREE.Fog(0x05080f,9,22);
+
+const cam=new THREE.PerspectiveCamera(46,W/H,0.1,80);
+
+/* ---------- lights ---------- */
+scene.add(new THREE.AmbientLight(0x6f86b8,0.85));
+const key=new THREE.DirectionalLight(0xbcd4ff,1.25); key.position.set(4.5,7.5,5); scene.add(key);
+const rim=new THREE.DirectionalLight(0x2a6df0,1.5); rim.position.set(-5,3,-4); scene.add(rim);
+const lampLight=new THREE.PointLight(0xffb35c,22,9,2); lampLight.position.set(-1.55,2.35,0.15); scene.add(lampLight);
+const monLight=new THREE.PointLight(0x2a6df0,14,7,2); monLight.position.set(0.5,1.95,-0.55); scene.add(monLight);
+
+/* ---------- materials ---------- */
+const M={
+  floor : new THREE.MeshStandardMaterial({color:0x0d1526,roughness:0.92,metalness:0.05}),
+  wall  : new THREE.MeshStandardMaterial({color:0x0a1120,roughness:1}),
+  desk  : new THREE.MeshStandardMaterial({color:0x1a2438,roughness:0.7,metalness:0.12}),
+  metal : new THREE.MeshStandardMaterial({color:0x2b3550,roughness:0.4,metalness:0.7}),
+  skin  : new THREE.MeshStandardMaterial({color:0xd8a882,roughness:0.75}),
+  shirt : new THREE.MeshStandardMaterial({color:0x2a6df0,roughness:0.62}),
+  pants : new THREE.MeshStandardMaterial({color:0x18223a,roughness:0.85}),
+  hair  : new THREE.MeshStandardMaterial({color:0x14171f,roughness:0.9}),
+  chair : new THREE.MeshStandardMaterial({color:0x101a2c,roughness:0.8}),
+  lamp  : new THREE.MeshStandardMaterial({color:0x2a3550,roughness:0.45,metalness:0.55}),
+  bulb  : new THREE.MeshStandardMaterial({color:0xffc98a,emissive:0xffb35c,emissiveIntensity:2.6}),
+  mug   : new THREE.MeshStandardMaterial({color:0xe8eef8,roughness:0.55}),
+  paper : new THREE.MeshStandardMaterial({color:0xc8d4e6,roughness:0.9}),
+};
+
+/* ---------- room ---------- */
+const room=new THREE.Group(); scene.add(room);
+const floor=new THREE.Mesh(new THREE.PlaneGeometry(24,24),M.floor);
+floor.rotation.x=-Math.PI/2; floor.position.y=0; room.add(floor);
+const backWall=new THREE.Mesh(new THREE.BoxGeometry(24,9,0.25),M.wall);
+backWall.position.set(0,4.5,-2.6); room.add(backWall);
+const sideWall=new THREE.Mesh(new THREE.BoxGeometry(0.25,9,14),M.wall);
+sideWall.position.set(-4.6,4.5,3); room.add(sideWall);
+
+// floor grid, subtle
+const grid=new THREE.GridHelper(24,48,0x1b2a45,0x121c30);
+grid.position.y=0.002; room.add(grid);
+
+/* ---------- desk ---------- */
+const deskTop=new THREE.Mesh(new THREE.BoxGeometry(3.5,0.14,1.5),M.desk);
+deskTop.position.set(0,1.0,0.15); room.add(deskTop);
+for(const [x,z] of [[-1.6,-0.5],[1.6,-0.5],[-1.6,0.8],[1.6,0.8]]){
+  const leg=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,1.0,10),M.metal);
+  leg.position.set(x,0.5,z); room.add(leg);
+}
+
+/* ---------- monitor with live canvas texture ---------- */
+const screenCanvas=document.createElement('canvas');
+screenCanvas.width=768; screenCanvas.height=448;
+const sx=screenCanvas.getContext('2d');
+const screenTex=new THREE.CanvasTexture(screenCanvas);
+screenTex.colorSpace=THREE.SRGBColorSpace;
+const screenMat=new THREE.MeshStandardMaterial({map:screenTex,emissiveMap:screenTex,
+  emissive:0xffffff,emissiveIntensity:1.15,roughness:0.35});
+const bezel=new THREE.Mesh(new THREE.BoxGeometry(1.78,1.06,0.07),M.metal);
+bezel.position.set(0.55,1.83,-0.62); bezel.rotation.y=-0.16; room.add(bezel);
+const screen=new THREE.Mesh(new THREE.PlaneGeometry(1.68,0.96),screenMat);
+screen.position.set(0.55,1.83,-0.575); screen.rotation.y=-0.16; room.add(screen);
+const stand=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.07,0.36,10),M.metal);
+stand.position.set(0.55,1.28,-0.62); room.add(stand);
+const base=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.04,0.28),M.metal);
+base.position.set(0.55,1.08,-0.62); room.add(base);
+
+/* ---------- desk props ---------- */
+const mug=new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.085,0.16,16),M.mug);
+mug.position.set(-1.05,1.15,0.42); room.add(mug);
+const papers=new THREE.Mesh(new THREE.BoxGeometry(0.42,0.012,0.3),M.paper);
+papers.position.set(-0.62,1.08,0.72); papers.rotation.y=0.22; room.add(papers);
+const keyboard=new THREE.Mesh(new THREE.BoxGeometry(0.72,0.035,0.24),M.metal);
+keyboard.position.set(0.5,1.08,0.42); keyboard.rotation.y=-0.1; room.add(keyboard);
+
+/* ---------- desk lamp ---------- */
+const lampArm=new THREE.Mesh(new THREE.CylinderGeometry(0.035,0.035,0.72,10),M.lamp);
+lampArm.position.set(-1.5,1.4,0.1); lampArm.rotation.z=0.5; room.add(lampArm);
+const lampHead=new THREE.Mesh(new THREE.ConeGeometry(0.19,0.26,18,1,true),M.lamp);
+lampHead.position.set(-1.2,1.78,0.05); lampHead.rotation.z=-0.9; room.add(lampHead);
+const bulb=new THREE.Mesh(new THREE.SphereGeometry(0.075,14,12),M.bulb);
+bulb.position.set(-1.16,1.68,0.05); room.add(bulb);
+
+/* ---------- chair ---------- */
+const chair=new THREE.Group(); room.add(chair);
+const seat=new THREE.Mesh(new THREE.BoxGeometry(0.62,0.09,0.62),M.chair);
+seat.position.set(-0.15,0.62,1.05); chair.add(seat);
+const backRest=new THREE.Mesh(new THREE.BoxGeometry(0.62,0.72,0.09),M.chair);
+backRest.position.set(-0.15,1.02,1.36); backRest.rotation.x=-0.08; chair.add(backRest);
+const post=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,0.58,10),M.metal);
+post.position.set(-0.15,0.3,1.05); chair.add(post);
+
+/* ---------- character rig ---------- */
+// Pivot at hips. Everything posed in local space so acts are simple eulers.
+const rig=new THREE.Group();
+rig.position.set(-0.15,0.66,1.02);
+rig.rotation.y=Math.PI;      // faces the desk (-Z)
+room.add(rig);
+
+const hips=new THREE.Group(); rig.add(hips);
+const pelvis=new THREE.Mesh(new THREE.BoxGeometry(0.46,0.26,0.3),M.pants);
+pelvis.position.y=0.13; hips.add(pelvis);
+
+// torso pivots at pelvis top
+const torso=new THREE.Group(); torso.position.y=0.26; hips.add(torso);
+const chest=new THREE.Mesh(new THREE.CylinderGeometry(0.27,0.24,0.62,18),M.shirt);
+chest.position.y=0.31; torso.add(chest);
+const shoulders=new THREE.Mesh(new THREE.CapsuleGeometry(0.13,0.42,6,12),M.shirt);
+shoulders.rotation.z=Math.PI/2; shoulders.position.y=0.58; torso.add(shoulders);
+
+// neck + head (head pivot at neck)
+const neck=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.08,0.1,10),M.skin);
+neck.position.y=0.66; torso.add(neck);
+const head=new THREE.Group(); head.position.y=0.7; torso.add(head);
+const skull=new THREE.Mesh(new THREE.SphereGeometry(0.2,24,18),M.skin);
+skull.scale.set(1,1.12,1); skull.position.y=0.1; head.add(skull);
+const hairCap=new THREE.Mesh(new THREE.SphereGeometry(0.205,22,14,0,Math.PI*2,0,Math.PI*0.56),M.hair);
+hairCap.position.y=0.115; hairCap.scale.set(1,1.1,1); head.add(hairCap);
+// eyes: two small dark spheres, gives a readable face at this scale
+for(const ex of [-0.068,0.068]){
+  const eye=new THREE.Mesh(new THREE.SphereGeometry(0.022,10,8),new THREE.MeshStandardMaterial({color:0x101822,roughness:0.35}));
+  eye.position.set(ex,0.1,0.185); head.add(eye);
+}
+
+// arms: upperArm pivot at shoulder, forearm pivot at elbow
+function makeArm(side){
+  const upper=new THREE.Group();
+  upper.position.set(side*0.27,0.54,0); torso.add(upper);
+  const uMesh=new THREE.Mesh(new THREE.CapsuleGeometry(0.075,0.3,6,10),M.shirt);
+  uMesh.position.y=-0.19; upper.add(uMesh);
+  const fore=new THREE.Group(); fore.position.y=-0.38; upper.add(fore);
+  const fMesh=new THREE.Mesh(new THREE.CapsuleGeometry(0.065,0.28,6,10),M.shirt);
+  fMesh.position.y=-0.18; fore.add(fMesh);
+  const hand=new THREE.Mesh(new THREE.SphereGeometry(0.075,12,10),M.skin);
+  hand.position.y=-0.36; fore.add(hand);
+  return {upper,fore,hand};
+}
+const armL=makeArm(-1), armR=makeArm(1);
+
+// legs: thigh pivot at hip, shin pivot at knee
+function makeLeg(side){
+  const thigh=new THREE.Group();
+  thigh.position.set(side*0.13,0.02,0); hips.add(thigh);
+  const tMesh=new THREE.Mesh(new THREE.CapsuleGeometry(0.095,0.34,6,10),M.pants);
+  tMesh.position.y=-0.21; thigh.add(tMesh);
+  const shin=new THREE.Group(); shin.position.y=-0.42; thigh.add(shin);
+  const sMesh=new THREE.Mesh(new THREE.CapsuleGeometry(0.08,0.34,6,10),M.pants);
+  sMesh.position.y=-0.21; shin.add(sMesh);
+  const foot=new THREE.Mesh(new THREE.BoxGeometry(0.14,0.08,0.24),M.hair);
+  foot.position.set(0,-0.42,0.05); shin.add(foot);
+  return {thigh,shin};
+}
+const legL=makeLeg(-1), legR=makeLeg(1);
+
+// phone prop parented to right hand
+const phone=new THREE.Mesh(new THREE.BoxGeometry(0.13,0.24,0.018),
+  new THREE.MeshStandardMaterial({color:0x0a0f1a,emissive:0x2a6df0,emissiveIntensity:0.8,roughness:0.3}));
+phone.position.set(0,-0.42,0.04); phone.rotation.x=-0.3; armR.fore.add(phone);
+
+/* ---------- poses ---------- */
+// Each pose: part -> [rx,ry,rz] in radians (absolute, not additive).
+const NEUTRAL={
+  torso:[0.05,0,0], head:[0,0,0],
+  'armL.upper':[0.15,0,0.32], 'armL.fore':[-0.55,0,0],
+  'armR.upper':[0.15,0,-0.32],'armR.fore':[-0.55,0,0],
+  'legL.thigh':[-1.42,0,0.06],'legL.shin':[1.45,0,0],
+  'legR.thigh':[-1.42,0,-0.06],'legR.shin':[1.45,0,0],
+  chair:0,
+};
+const POSES={
+  // 0 hook: sat still, hands on desk, staring at a dead screen
+  hook:{
+    torso:[0.08,0,0], head:[0.02,0.06,0],
+    'armL.upper':[0.5,0,0.24],'armL.fore':[-1.15,0,0],
+    'armR.upper':[0.5,0,-0.24],'armR.fore':[-1.15,0,0],
+    'legL.thigh':[-1.42,0,0.06],'legL.shin':[1.45,0,0],
+    'legR.thigh':[-1.42,0,-0.06],'legR.shin':[1.45,0,0],
+    chair:0,
+  },
+  // 1 confident: leans back, arms folded
+  confident:{
+    torso:[-0.16,0,0], head:[-0.1,0.14,0.02],
+    'armL.upper':[0.22,0,0.72],'armL.fore':[-1.75,0,0],
+    'armR.upper':[0.22,0,-0.72],'armR.fore':[-1.75,0,0],
+    'legL.thigh':[-1.36,0,0.1],'legL.shin':[1.4,0,0],
+    'legR.thigh':[-1.36,0,-0.1],'legR.shin':[1.4,0,0],
+    chair:-0.05,
+  },
+  // 2 first red candle: leans in hard, hands to desk
+  leanIn:{
+    torso:[0.42,0,0], head:[0.16,-0.04,0],
+    'armL.upper':[0.86,0,0.18],'armL.fore':[-1.35,0,0],
+    'armR.upper':[0.86,0,-0.18],'armR.fore':[-1.35,0,0],
+    'legL.thigh':[-1.4,0,0.06],'legL.shin':[1.42,0,0],
+    'legR.thigh':[-1.4,0,-0.06],'legR.shin':[1.42,0,0],
+    chair:0.04,
+  },
+  // 3 denial: leans back, phone up in right hand, left hand waving
+  denial:{
+    torso:[-0.2,-0.1,0], head:[-0.06,0.22,0.03],
+    'armL.upper':[0.35,0,0.55],'armL.fore':[-1.5,0.2,0],
+    'armR.upper':[-0.55,0,-0.55],'armR.fore':[-1.95,0,0],
+    'legL.thigh':[-1.34,0,0.1],'legL.shin':[1.38,0,0],
+    'legR.thigh':[-1.34,0,-0.1],'legR.shin':[1.38,0,0],
+    chair:-0.06,
+  },
+  // 4 moving the stop: both hands forward, head down, shoulders up
+  moveStop:{
+    torso:[0.3,0,0], head:[0.34,-0.02,0],
+    'armL.upper':[1.0,0,0.1],'armL.fore':[-0.85,0,0],
+    'armR.upper':[1.0,0,-0.1],'armR.fore':[-0.85,0,0],
+    'legL.thigh':[-1.42,0,0.05],'legL.shin':[1.45,0,0],
+    'legR.thigh':[-1.42,0,-0.05],'legR.shin':[1.45,0,0],
+    chair:0.02,
+  },
+  // 5 exit: head in hands, elbows on desk, spine collapsed
+  collapsed:{
+    torso:[0.62,0,0], head:[0.5,0,0],
+    'armL.upper':[1.15,0,0.3],'armL.fore':[-2.1,0,0],
+    'armR.upper':[1.15,0,-0.3],'armR.fore':[-2.1,0,0],
+    'legL.thigh':[-1.44,0,0.08],'legL.shin':[1.46,0,0],
+    'legR.thigh':[-1.44,0,-0.08],'legR.shin':[1.46,0,0],
+    chair:0.05,
+  },
+};
+
+const PARTS={
+  torso, head, chair,
+  'armL.upper':armL.upper,'armL.fore':armL.fore,
+  'armR.upper':armR.upper,'armR.fore':armR.fore,
+  'legL.thigh':legL.thigh,'legL.shin':legL.shin,
+  'legR.thigh':legR.thigh,'legR.shin':legR.shin,
+};
+function applyPose(p){
+  for(const k in PARTS){
+    const v=p[k]||[0,0,0];
+    PARTS[k].rotation.set(v[0],v[1],v[2]);
+  }
+  chair.position.y=p.chair||0;
+}
+function lerpPose(a,b,t){
+  const out={};
+  for(const k in PARTS){
+    const A=a[k]||[0,0,0], B=b[k]||[0,0,0];
+    out[k]=[A[0]+(B[0]-A[0])*t, A[1]+(B[1]-A[1])*t, A[2]+(B[2]-A[2])*t];
+  }
+  out.chair=(a.chair||0)+((b.chair||0)-(a.chair||0))*t;
+  return out;
+}
+const ease=t=>t<0?0:t>1?1:t*t*(3-2*t);
+
+/* ---------- screen content ---------- */
+// Synthetic OHLC, illustrative only. Explicit bodies + wicks so the
+// decline reads as real movement rather than a line of dots.
+const CANDLES=(function(){
+  // Deterministic LCG so every capture run produces identical frames.
+  let s=1337;
+  const rnd=()=>{s=(s*1664525+1013904223)>>>0; return s/4294967296;};
+  const out=[];
+  let o=0.80;
+  // act 1 grind up, act 2 first reds, act 3 false bounce, act 4 break, act 5 capitulation
+  const drift=[.012,.018,.010,.014,.008,-.006,-.022,-.014,-.030,-.020,-.038,.016,.010,-.026,-.044,-.030,-.052,-.040,-.062,-.048,-.070,-.058];
+  for(let i=0;i<drift.length;i++){
+    const c=Math.max(0.06,Math.min(0.94,o+drift[i]));
+    const body=Math.abs(c-o);
+    const up=c>=o;
+    const wickUp=body*0.55+0.012+rnd()*0.018;
+    const wickDn=body*0.55+0.012+rnd()*0.018;
+    out.push({
+      o, c, up,
+      h: Math.min(0.98, Math.max(o,c)+wickUp),
+      l: Math.max(0.02, Math.min(o,c)-wickDn),
+    });
+    o=c;
+  }
+  return out;
+})();
+// Reveal is tied to the five acts so the story and the chart move together.
+const REVEAL=[[0,7],[5,7],[15,11],[25,15],[35,19],[45,22]];
+
+function drawScreen(t){
+  const w=screenCanvas.width, h=screenCanvas.height;
+  sx.fillStyle='#060c18'; sx.fillRect(0,0,w,h);
+
+  const PAD_L=18, PAD_R=96, PAD_T=54, PAD_B=30;
+  const plotW=w-PAD_L-PAD_R, plotH=h-PAD_T-PAD_B;
+  const yOf=v=>PAD_T+plotH*(1-v);
+
+  // grid
+  sx.strokeStyle='rgba(90,130,200,.14)'; sx.lineWidth=1;
+  for(let i=0;i<=4;i++){const y=PAD_T+plotH*i/4;sx.beginPath();sx.moveTo(PAD_L,y);sx.lineTo(w-PAD_R,y);sx.stroke();}
+
+  // header
+  sx.fillStyle='rgba(150,180,225,.8)'; sx.font='600 18px monospace';
+  sx.fillText('ILLUSTRATIVE', PAD_L, 30);
+
+  // how many candles are on screen at time t
+  let n=7;
+  for(const [at,cnt] of REVEAL){ if(t>=at) n=cnt; }
+
+  const N=22, slotW=plotW/N, cw=slotW*0.58;
+
+  // entry level = first candle open
+  const entry=CANDLES[0].o;
+  sx.strokeStyle='rgba(150,185,235,.55)'; sx.setLineDash([8,6]); sx.lineWidth=1.6;
+  sx.beginPath(); sx.moveTo(PAD_L,yOf(entry)); sx.lineTo(w-PAD_R,yOf(entry)); sx.stroke();
+  sx.setLineDash([]);
+
+  for(let i=0;i<n;i++){
+    const d=CANDLES[i];
+    const cx=PAD_L+slotW*i+slotW/2;
+    const col=d.up?'#3dffa0':'#ff5560';
+
+    // wick: high to low, full range visible
+    sx.strokeStyle=col; sx.lineWidth=2;
+    sx.beginPath();
+    sx.moveTo(cx, yOf(d.h));
+    sx.lineTo(cx, yOf(d.l));
+    sx.stroke();
+
+    // body: open to close, minimum 4px so dojis still read
+    const yO=yOf(d.o), yC=yOf(d.c);
+    const top=Math.min(yO,yC), bh=Math.max(4,Math.abs(yO-yC));
+    sx.fillStyle=col;
+    sx.fillRect(cx-cw/2, top, cw, bh);
+    // hollow body for up candles reads cleaner at this size
+    if(d.up){
+      sx.fillStyle='#0a1424';
+      sx.fillRect(cx-cw/2+2, top+2, Math.max(1,cw-4), Math.max(1,bh-4));
+      sx.strokeStyle=col; sx.lineWidth=1.6;
+      sx.strokeRect(cx-cw/2+1, top+1, cw-2, Math.max(2,bh-2));
+    }
+  }
+
+  // live price marker on the last revealed close
+  const last=CANDLES[n-1];
+  const yl=yOf(last.c);
+  const col=last.up?'#3dffa0':'#ff5560';
+  sx.fillStyle=col;
+  sx.fillRect(w-PAD_R+4, yl-11, 74, 22);
+  sx.fillStyle='#04080f'; sx.font='700 17px monospace';
+  sx.fillText(((last.c-0.5)*1800+1140).toFixed(2), w-PAD_R+10, yl+6);
+
+  // connection line from last candle to the marker
+  sx.strokeStyle=col; sx.lineWidth=1; sx.setLineDash([3,3]);
+  sx.beginPath(); sx.moveTo(PAD_L+slotW*(n-1)+slotW/2, yl); sx.lineTo(w-PAD_R+4, yl); sx.stroke();
+  sx.setLineDash([]);
+
+  screenTex.needsUpdate=true;
+}
+
+/* ---------- camera keyframes ---------- */
+// [t, camX, camY, camZ, targetX, targetY, targetZ]
+const CAMK=[
+  [ 0.0, 3.05, 2.55, 5.55, 0.0, 1.35, 0.0],
+  [ 5.0, 2.55, 2.35, 5.10, 0.1, 1.45, 0.0],
+  [15.0, 2.15, 2.15, 4.60, 0.2, 1.50,-0.05],
+  [25.0, 1.70, 2.05, 4.15, 0.3, 1.55,-0.1],
+  [35.0, 1.25, 2.00, 3.80, 0.35,1.58,-0.12],
+  [45.0, 0.85, 2.05, 3.65, 0.4, 1.55,-0.14],
+  [55.0, 0.55, 2.25, 3.80, 0.35,1.50,-0.12],
+  [62.0, 0.30, 2.55, 4.30, 0.2, 1.42,-0.08],
+  [68.0, 0.20, 2.75, 4.70, 0.15,1.38,-0.05],
+];
+const tmpA=new THREE.Vector3(), tmpB=new THREE.Vector3();
+function camAt(t){
+  let i=0;
+  while(i<CAMK.length-2 && t>CAMK[i+1][0]) i++;
+  const a=CAMK[i], b=CAMK[i+1];
+  const raw=(t-a[0])/Math.max(0.001,b[0]-a[0]);
+  const k=ease(Math.max(0,Math.min(1,raw)));
+  cam.position.set(a[1]+(b[1]-a[1])*k, a[2]+(b[2]-a[2])*k, a[3]+(b[3]-a[3])*k);
+  tmpA.set(a[4]+(b[4]-a[4])*k, a[5]+(b[5]-a[5])*k, a[6]+(b[6]-a[6])*k);
+  cam.lookAt(tmpA);
+}
+
+/* ---------- timeline ---------- */
+// [start, end, poseKey, caption html, number label]
+const ACTS=[
+  [ 5.0, 15.0,'confident', '1. The entry felt <b>obvious.</b>','ACT 1 / 5'],
+  [15.0, 25.0,'leanIn',    '2. First candle closes <span class="red">red.</span>','ACT 2 / 5'],
+  [25.0, 35.0,'denial',    '3. <b>“It comes back.”</b> No plan. Just hope.','ACT 3 / 5'],
+  [35.0, 45.0,'moveStop',  '4. So you move the <span class="red">stop.</span>','ACT 4 / 5'],
+  [45.0, 55.0,'collapsed', '5. You close at the <span class="red">worst</span> price.','ACT 5 / 5'],
+];
+
+/* ---------- DOM refs ---------- */
+const $=id=>document.getElementById(id);
+const elTitle=$('title'), elCap=$('cap'), elNum=$('num'), elEnd=$('end'),
+      elHandle=$('handle'), elDisc=$('disc'), elBrand=$('brand');
+
+const clamp01=v=>v<0?0:v>1?1:v;
+const fade=(t,a,b)=>clamp01((t-a)/Math.max(0.001,b-a));
+
+/* ---------- the single deterministic entry point ---------- */
+window.DURATION=DUR;
+window.seek=function(t){
+  t=Math.max(0,Math.min(DUR,t));
+
+  // pose: hold previous act's pose, ease into the next over 0.9s
+  let pose=POSES.hook;
+  for(const [s,e,key] of ACTS){
+    if(t>=s){
+      const prevKey=ACTS[Math.max(0,ACTS.findIndex(a=>a[2]===key)-1)]?.[2]||'hook';
+      const from=POSES[prevKey]||POSES.hook;
+      pose=lerpPose(from,POSES[key],ease(clamp01((t-s)/0.9)));
+    }
+  }
+  applyPose(pose);
+
+  // breathing / micro-motion, deterministic on t
+  const breath=Math.sin(t*1.9)*0.012;
+  torso.rotation.x+=breath;
+  head.rotation.y+=Math.sin(t*0.55)*0.05;
+  head.rotation.z+=Math.sin(t*0.83)*0.012;
+
+  // screen
+  drawScreen(t);
+  monLight.intensity=13+Math.sin(t*2.4)*1.6;
+
+  // camera
+  camAt(t);
+
+  // ---- text layer ----
+  elTitle.style.opacity=fade(t,0.5,1.6)*(1-fade(t,4.2,5.0));
+  elTitle.style.transform=`translateY(${(1-fade(t,0.5,1.6))*26}px)`;
+  elBrand.style.opacity=fade(t,0.2,1.0)*(1-fade(t,4.6,5.2)*0.35);
+
+  // caption + act number
+  let cap='', num='', capA=0, numA=0;
+  for(const [s,e,,c,n] of ACTS){
+    if(t>=s-0.15 && t<=e+0.15){
+      cap=c; num=n;
+      capA=fade(t,s-0.15,s+0.55)*(1-fade(t,e-0.35,e+0.15));
+      numA=capA;
+    }
+  }
+  elCap.innerHTML=cap; elCap.style.opacity=capA;
+  elNum.textContent=num; elNum.style.opacity=numA*0.95;
+
+  // end card
+  const endA=fade(t,56.0,57.2);
+  elEnd.style.opacity=endA;
+  elEnd.style.transform=`translateY(${(1-endA)*22}px)`;
+  elHandle.style.opacity=fade(t,58.5,59.8);
+  elDisc.style.opacity=fade(t,59.0,60.4);
+
+  // vignette deepens as he collapses
+  renderer.render(scene,cam);
+};
+
+window.seek(0);
+window.__ready=true;
+</script>
+</body></html>
