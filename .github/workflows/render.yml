@@ -45,7 +45,11 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: |
+          # npm ci intermittently fails on macOS with "Exit handler never called".
+          # npm install is tolerant of an out-of-sync lockfile and recovers.
+          npm install --no-audit --no-fund
+          test -d node_modules/remotion || npm install --no-audit --no-fund
 
       - name: Resolve compositions
         id: plan
